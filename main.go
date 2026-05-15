@@ -7,8 +7,10 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png"
+	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -39,10 +41,11 @@ DESCRIPTION
     accordingly (e.g. prefix with dates: "2026-01-15_coffee.jpg") if order matters.
 
     Supported input extensions (case-insensitive):
-        .pdf   passed through as-is, included in the merge
-        .jpg   converted to a single A4 PDF page
-        .jpeg  same as .jpg
-        .png   same as .jpg
+        .pdf         passed through as-is, included in the merge
+        .jpg/.jpeg   converted to a single A4 PDF page
+        .png         same as .jpg
+        .heic/.heif  iPhone format; requires 'sips' (macOS built-in)
+                     to transcode to PNG first, then same as .jpg
 
     Files with other extensions, hidden files, and subdirectories are ignored.
     The directory is not scanned recursively.
@@ -56,9 +59,12 @@ IMAGE PROCESSING
          ratio, and centred. Landscape images will be letterboxed top/bottom;
          portrait images fill nearly the full page.
 
-    Existing PDF files are NOT recompressed or downscaled. If an input PDF
-    contains large embedded images, they will remain large in the output.
-    The optimisation pass only deduplicates objects and cleans structure.
+    Existing PDF files are not modified at the image level by Go. To
+    actually shrink airline-receipt PDFs (which often wrap a large scan),
+    the merged file is fed through Ghostscript as a final pass if 'gs' is
+    on $PATH: PDFSETTINGS=/ebook with images downsampled to 150 DPI.
+    Without Ghostscript installed, only the pdfcpu structural optimisation
+    runs and large embedded images stay large.
 
 OPTIONS
     -in <path>      (required) Directory containing input files.
@@ -120,23 +126,18 @@ func main() {
 		log.Fatalf("error: -in must be a directory: %s", inDir)
 	}
 
-	cleanupWork := false
-	if workDir == "" {
+	usingTempDir := workDir == ""
+	if usingTempDir {
 		workDir, err = os.MkdirTemp("", "expense-*")
 		if err != nil {
 			log.Fatalf("error: create temp dir: %v", err)
 		}
-		cleanupWork = !keepWork
-	} else {
-		if err := os.MkdirAll(workDir, 0o755); err != nil {
-			log.Fatalf("error: create work dir: %v", err)
-		}
+	} else if err := os.MkdirAll(workDir, 0o755); err != nil {
+		log.Fatalf("error: create work dir: %v", err)
 	}
-	defer func() {
-		if cleanupWork {
-			_ = os.RemoveAll(workDir)
-		}
-	}()
+	if usingTempDir && !keepWork {
+		defer os.RemoveAll(workDir)
+	}
 
 	entries, err := os.ReadDir(inDir)
 	if err != nil {
@@ -147,6 +148,23 @@ func main() {
 		return entries[i].Name() < entries[j].Name()
 	})
 
+	var sipsPath string
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext == ".heic" || ext == ".heif" {
+			p, err := exec.LookPath("sips")
+			if err != nil {
+				log.Fatalf("error: HEIC/HEIF input detected (%s) but 'sips' was not found on $PATH.\n"+
+					"Convert these files to JPEG or PNG by other means, then re-run.", e.Name())
+			}
+			sipsPath = p
+			break
+		}
+	}
+
 	var pdfPaths []string
 	for _, e := range entries {
 		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
@@ -155,17 +173,32 @@ func main() {
 		src := filepath.Join(inDir, e.Name())
 		ext := strings.ToLower(filepath.Ext(e.Name()))
 
-		switch ext {
-		case ".pdf":
+		if ext == ".pdf" {
 			pdfPaths = append(pdfPaths, src)
+			continue
+		}
+
+		imgSrc := src
+		switch ext {
 		case ".jpg", ".jpeg", ".png":
-			out := filepath.Join(workDir, strings.TrimSuffix(e.Name(), ext)+".pdf")
-			if err := imageToPDF(src, out); err != nil {
+			// use src directly
+		case ".heic", ".heif":
+			converted := filepath.Join(workDir, strings.TrimSuffix(e.Name(), ext)+".png")
+			if err := sipsToPNG(sipsPath, src, converted); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: skip %s: %v\n", src, err)
 				continue
 			}
-			pdfPaths = append(pdfPaths, out)
+			imgSrc = converted
+		default:
+			continue
 		}
+
+		out := filepath.Join(workDir, strings.TrimSuffix(e.Name(), ext)+".pdf")
+		if err := imageToPDF(imgSrc, out); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skip %s: %v\n", src, err)
+			continue
+		}
+		pdfPaths = append(pdfPaths, out)
 	}
 
 	if len(pdfPaths) == 0 {
@@ -178,8 +211,20 @@ func main() {
 		log.Fatalf("error: merge: %v", err)
 	}
 
-	if err := api.OptimizeFile(merged, outFile, nil); err != nil {
+	optimized := filepath.Join(workDir, "_optimized.pdf")
+	if err := api.OptimizeFile(merged, optimized, nil); err != nil {
 		log.Fatalf("error: optimise: %v", err)
+	}
+
+	if gs, err := exec.LookPath("gs"); err == nil {
+		if err := runGhostscript(gs, optimized, outFile); err != nil {
+			log.Fatalf("error: ghostscript: %v", err)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "warning: 'gs' not on $PATH; embedded PDF images not recompressed")
+		if err := copyFile(optimized, outFile); err != nil {
+			log.Fatalf("error: write output: %v", err)
+		}
 	}
 
 	st, err := os.Stat(outFile)
@@ -232,10 +277,7 @@ func imageToPDF(srcPath, dstPath string) error {
 func downscale(src image.Image, maxEdge int) image.Image {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
-	long := w
-	if h > long {
-		long = h
-	}
+	long := max(w, h)
 	if long <= maxEdge {
 		return src
 	}
@@ -250,4 +292,44 @@ func toGray(src image.Image) image.Image {
 	gray := image.NewGray(b)
 	draw.Draw(gray, b, src, b.Min, draw.Src)
 	return gray
+}
+
+func sipsToPNG(sips, src, dst string) error {
+	cmd := exec.Command(sips, "-s", "format", "png", src, "--out", dst)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("sips: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func runGhostscript(gs, in, out string) error {
+	cmd := exec.Command(gs,
+		"-sDEVICE=pdfwrite",
+		"-dCompatibilityLevel=1.5",
+		"-dPDFSETTINGS=/ebook",
+		"-dDownsampleColorImages=true", "-dColorImageResolution=150",
+		"-dDownsampleGrayImages=true", "-dGrayImageResolution=150",
+		"-dDownsampleMonoImages=true", "-dMonoImageResolution=300",
+		"-dNOPAUSE", "-dQUIET", "-dBATCH",
+		"-sOutputFile="+out,
+		in,
+	)
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func copyFile(src, dst string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	_, err = io.Copy(d, s)
+	return err
 }
