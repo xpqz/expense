@@ -1,0 +1,5 @@
+/expense
+*.test
+*.out
+.DS_Store
+.claude/settings.local.json
