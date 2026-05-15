@@ -23,19 +23,24 @@ After writing or editing code, check LSP diagnostics before moving on. Fix any t
 
 ## Project
 
-`expense` — a single-file Go CLI (`main.go`, module `github.com/stefan/expense`) that scans a directory of receipts (PDFs + JPG/JPEG/PNG), converts images to A4 PDF pages, merges everything into one PDF, and runs a structural optimisation pass. Dependencies: `go-pdf/fpdf`, `pdfcpu`, `golang.org/x/image/draw`.
+Module `github.com/stefan/expense`. Two binaries:
+
+- **`expense`** (root `main.go`) — scans a directory of receipts (PDFs + JPG/JPEG/PNG/HEIC), merges them into one optimised PDF. Deps: `go-pdf/fpdf`, `pdfcpu`, `golang.org/x/image/draw`.
+- **`expense-sheet`** (`cmd/expense-sheet/`) — sends each receipt to the Claude API, extracts `{date, vendor, currency, amount, summary}` via a forced `record_expense` tool call (model `claude-sonnet-4-6`, thinking disabled), and fills a company-issued `.xlsx` claim template. Deps: `xuri/excelize/v2`, `anthropics/anthropic-sdk-go`. Requires `ANTHROPIC_API_KEY` in the environment.
 
 ## Commands
 
 Use the Makefile for common tasks:
 
 ```
-make build           # go build -o expense .
+make build              # builds both binaries
+make build-merge build-sheet
 make run ARGS="-in ./receipts -out ./out.pdf"
+make run-sheet ARGS="-in ./data -template assets/Expenses_Claim_Form_Template_2026.xlsx -out claim.xlsx -name 'Stefan Kruger' -claim-date 2026-05-15"
 make fmt vet test tidy clean
 ```
 
-Direct invocation also works: `go run . -in ./receipts -out ./out.pdf`. There are no tests yet — run a single test with `go test -run TestName ./...` once you add one.
+Direct invocation also works: `go run . -in ./receipts -out ./out.pdf` or `go run ./cmd/expense-sheet -in ./data ...`. There are no tests yet — run a single test with `go test -run TestName ./...` once you add one.
 
 ## Architecture notes
 
