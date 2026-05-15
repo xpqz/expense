@@ -53,11 +53,13 @@ DESCRIPTION
 IMAGE PROCESSING
     Each image is:
       1. Downscaled so its longest edge is at most 2000px (preserves aspect ratio).
-      2. Converted to 8-bit grayscale.
-      3. Re-encoded as JPEG at quality 80.
-      4. Placed on an A4 portrait page, scaled to fit while preserving aspect
-         ratio, and centred. Landscape images will be letterboxed top/bottom;
-         portrait images fill nearly the full page.
+      2. Rotated 90° clockwise if the pixels are landscape (width > height),
+         so phone photos of receipts taken in portrait orientation read
+         upright on the page.
+      3. Converted to 8-bit grayscale.
+      4. Re-encoded as JPEG at quality 80.
+      5. Placed on an A4 portrait page, scaled to fit while preserving aspect
+         ratio, and centred.
 
     Existing PDF files are not modified at the image level by Go. To
     actually shrink airline-receipt PDFs (which often wrap a large scan),
@@ -247,6 +249,9 @@ func imageToPDF(srcPath, dstPath string) error {
 	}
 
 	img = downscale(img, maxLongEdge)
+	if b := img.Bounds(); b.Dx() > b.Dy() {
+		img = rotate90CW(img)
+	}
 	img = toGray(img)
 
 	var buf bytes.Buffer
@@ -292,6 +297,18 @@ func toGray(src image.Image) image.Image {
 	gray := image.NewGray(b)
 	draw.Draw(gray, b, src, b.Min, draw.Src)
 	return gray
+}
+
+func rotate90CW(src image.Image) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, h, w))
+	for y := range h {
+		for x := range w {
+			dst.Set(h-1-y, x, src.At(b.Min.X+x, b.Min.Y+y))
+		}
+	}
+	return dst
 }
 
 func sipsToPNG(sips, src, dst string) error {
