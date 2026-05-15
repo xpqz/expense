@@ -1,4 +1,6 @@
 /expense
+/expense-sheet
+/claim.xlsx
 *.test
 *.out
 .DS_Store

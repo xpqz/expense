@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	maxLongEdge = 2000 // px
-	jpegQuality = 80
-	a4WidthMM   = 210.0
-	a4HeightMM  = 297.0
+	maxLongEdge        = 2000 // px
+	jpegQuality        = 80
+	a4WidthMM          = 210.0
+	a4HeightMM         = 297.0
+	expenseMergeMarker = "expense-merge"
 )
 
 const helpText = `expense — combine receipt images and PDFs into a single optimised PDF
@@ -235,6 +236,10 @@ func main() {
 		if err := copyFile(optimized, outFile); err != nil {
 			log.Fatalf("error: write output: %v", err)
 		}
+	}
+
+	if err := api.AddKeywordsFile(outFile, outFile, []string{expenseMergeMarker}, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not tag output PDF: %v\n", err)
 	}
 
 	st, err := os.Stat(outFile)
