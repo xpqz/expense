@@ -26,3 +26,7 @@ Files are processed in lexicographic order by filename — prefix with dates (e.
 
 - Existing PDF inputs are passed through untouched; the optimisation pass deduplicates objects but does **not** recompress embedded images.
 - The working directory (`-work`) is removed on success unless `-keep-work` is set or an explicit `-work` path is given.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
