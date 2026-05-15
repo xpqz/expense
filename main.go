@@ -128,6 +128,11 @@ func main() {
 		log.Fatalf("error: -in must be a directory: %s", inDir)
 	}
 
+	outAbs, err := filepath.Abs(outFile)
+	if err != nil {
+		log.Fatalf("error: resolve output path: %v", err)
+	}
+
 	usingTempDir := workDir == ""
 	if usingTempDir {
 		workDir, err = os.MkdirTemp("", "expense-*")
@@ -173,6 +178,9 @@ func main() {
 			continue
 		}
 		src := filepath.Join(inDir, e.Name())
+		if srcAbs, err := filepath.Abs(src); err == nil && srcAbs == outAbs {
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(e.Name()))
 
 		if ext == ".pdf" {
