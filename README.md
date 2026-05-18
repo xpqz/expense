@@ -5,7 +5,7 @@ A pair of Go command-line tools for preparing UK business-expense submissions fr
 - `expense` merges receipt images and PDF receipts into a single, size-optimised PDF suitable for attaching to a claim.
 - `expense-sheet` reads the same folder, extracts the structured fields from each receipt via the Claude API, and fills the line items on a company-issued .xlsx claim template.
 
-Both tools accept the same input formats: `.pdf`, `.jpg`, `.jpeg`, `.png`, `.heic`, `.heif`. Files are processed in lexicographic order by filename, so prefix receipts with a date (e.g. `2026-05-11_taxi.heic`) if running order matters.
+Both tools accept the same input formats: `.pdf`, `.jpg`, `.jpeg`, `.png`, `.heic`, `.heif`. `expense` processes files in lexicographic order by filename, so prefix receipts with a date (e.g. `2026-05-11_taxi.heic`) if the order of pages in the merged PDF matters. `expense-sheet` ignores filenames for ordering and instead sorts the rows of the claim by the transaction date the model extracts from each receipt.
 
 ## Install
 

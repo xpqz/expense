@@ -133,6 +133,8 @@ func main() {
 		expenses = append(expenses, exp)
 	}
 
+	sortExpensesByDate(expenses)
+
 	if err := fillTemplate(templatePath, outFile, name, claimDate, expenses); err != nil {
 		log.Fatalf("error: fill template: %v", err)
 	}
@@ -199,6 +201,24 @@ func isExpenseMergeOutput(path string) bool {
 		}
 	}
 	return false
+}
+
+// sortExpensesByDate orders expenses chronologically; unparseable dates sort to the end.
+func sortExpensesByDate(expenses []Expense) {
+	sort.SliceStable(expenses, func(i, j int) bool {
+		ti, oki := time.Parse("2006-01-02", expenses[i].Date)
+		tj, okj := time.Parse("2006-01-02", expenses[j].Date)
+		switch {
+		case oki == nil && okj == nil:
+			return ti.Before(tj)
+		case oki == nil:
+			return true
+		case okj == nil:
+			return false
+		default:
+			return false
+		}
+	})
 }
 
 func needsSips(paths []string) bool {
