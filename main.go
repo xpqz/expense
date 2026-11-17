@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -144,7 +145,11 @@ func main() {
 		log.Fatalf("error: create work dir: %v", err)
 	}
 	if usingTempDir && !keepWork {
-		defer os.RemoveAll(workDir)
+		defer func() {
+			if err := os.RemoveAll(workDir); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: remove work dir %s: %v\n", workDir, err)
+			}
+		}()
 	}
 
 	entries, err := os.ReadDir(inDir)
@@ -250,13 +255,12 @@ func main() {
 }
 
 func imageToPDF(srcPath, dstPath string) error {
-	f, err := os.Open(srcPath)
+	raw, err := os.ReadFile(srcPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	img, _, err := image.Decode(f)
+	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}
@@ -349,17 +353,17 @@ func runGhostscript(gs, in, out string) error {
 	return cmd.Run()
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (err error) {
 	s, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer func() { err = errors.Join(err, s.Close()) }()
 	d, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() { err = errors.Join(err, d.Close()) }()
 	_, err = io.Copy(d, s)
 	return err
 }
