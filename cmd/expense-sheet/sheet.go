@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,12 +11,16 @@ import (
 
 const firstItemRow = 7
 
-func fillTemplate(templatePath, outFile, name string, claimDate time.Time, expenses []Expense) error {
+func fillTemplate(templatePath, outFile, name string, claimDate time.Time, expenses []Expense) (err error) {
 	f, err := excelize.OpenFile(templatePath)
 	if err != nil {
 		return fmt.Errorf("open template: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close template: %w", cerr))
+		}
+	}()
 
 	sheet := f.GetSheetName(0)
 

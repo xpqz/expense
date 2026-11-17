@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -129,24 +130,33 @@ func buildContentBlocks(receiptPath string) ([]anthropic.ContentBlockParamUnion,
 		if err != nil {
 			return nil, nil, err
 		}
-		tmp.Close()
+		tmpPath := tmp.Name()
+		// fail removes the temp file and reports any removal error alongside err.
+		fail := func(err error) ([]anthropic.ContentBlockParamUnion, func(), error) {
+			return nil, nil, errors.Join(err, os.Remove(tmpPath))
+		}
+		if err := tmp.Close(); err != nil {
+			return fail(fmt.Errorf("close temp file: %w", err))
+		}
 		cmd := exec.Command("sips",
 			"-s", "format", "jpeg",
 			"-s", "formatOptions", "80",
 			"-Z", "2000",
-			receiptPath, "--out", tmp.Name(),
+			receiptPath, "--out", tmpPath,
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			os.Remove(tmp.Name())
-			return nil, nil, fmt.Errorf("sips: %v: %s", err, strings.TrimSpace(string(out)))
+			return fail(fmt.Errorf("sips: %w: %s", err, strings.TrimSpace(string(out))))
 		}
-		b, err := os.ReadFile(tmp.Name())
+		b, err := os.ReadFile(tmpPath)
 		if err != nil {
-			os.Remove(tmp.Name())
-			return nil, nil, err
+			return fail(err)
 		}
 		data = b
-		cleanup = func() { os.Remove(tmp.Name()) }
+		cleanup = func() {
+			if err := os.Remove(tmpPath); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: remove temp file: %v\n", err)
+			}
+		}
 		mediaType = "image/jpeg"
 	default:
 		return nil, nil, fmt.Errorf("unsupported extension: %s", ext)

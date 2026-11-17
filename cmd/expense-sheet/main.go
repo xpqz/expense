@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -199,12 +200,11 @@ func scanInputs(inDir, outFile string) ([]string, error) {
 }
 
 func isExpenseMergeOutput(path string) bool {
-	f, err := os.Open(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	defer f.Close()
-	kws, err := api.Keywords(f, nil)
+	kws, err := api.Keywords(bytes.NewReader(b), nil)
 	if err != nil {
 		return false
 	}
