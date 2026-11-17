@@ -36,6 +36,11 @@ DESCRIPTION
     noted in the Details column (with the currency code) and the Total
     column is left blank for those rows, per company policy.
 
+    Receipts that extract to the same date, currency and amount are
+    treated as one purchase (e.g. a ticket and its card voucher): only
+    the first, in filename order, is written, and each skipped file is
+    reported on stderr.
+
     Requires ANTHROPIC_API_KEY in the environment. HEIC inputs require
     'sips' on $PATH (built in on macOS).
 
@@ -130,7 +135,15 @@ func main() {
 			log.Fatalf("error: extract %s: %v", r, err)
 		}
 		fmt.Fprintf(os.Stderr, "%s %s %.2f %s\n", exp.Date, exp.Vendor, exp.Amount, exp.Currency)
+		exp.Source = r
 		expenses = append(expenses, exp)
+	}
+
+	expenses, dups := dedupeExpenses(expenses)
+	for _, d := range dups {
+		fmt.Fprintf(os.Stderr, "skipping %s: duplicate of %s (%s %.2f %s)\n",
+			filepath.Base(d.Dropped.Source), filepath.Base(d.Kept.Source),
+			d.Kept.Date, d.Kept.Amount, strings.ToUpper(d.Kept.Currency))
 	}
 
 	sortExpensesByDate(expenses)

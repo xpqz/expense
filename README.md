@@ -86,6 +86,8 @@ Extracted rows are written to the .xlsx template:
 - GBP amounts are written to the Total column (D) as numeric values, picked up by the existing `=SUM(D7:D23)` total at row 24.
 - Non-GBP amounts are noted in column B as `<vendor> — <summary> [<amount> <CCY>]` and column D is left blank for those rows, per company policy. Conversion to GBP and entry of the converted total is left to the accounts team.
 
+Receipts that extract to the same date, currency and amount (to the penny) are treated as one purchase, for example a rail ticket photographed alongside its card voucher. Only the first such file in filename order becomes a row; each skipped file is reported on stderr as `skipping <file>: duplicate of <file>`. Vendor is not compared, as the same purchase is often named differently on different documents. The flip side is that two genuinely separate purchases with the same date and amount are also merged, so check the stderr output.
+
 The template provides 17 line-item slots (rows 7 to 23). If more receipts are found, `expense-sheet` exits with an error before contacting the API; split the run into multiple claims.
 
 ### Flags
