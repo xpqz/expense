@@ -19,6 +19,8 @@ type Expense struct {
 	Currency string  `json:"currency"`
 	Amount   float64 `json:"amount"`
 	Summary  string  `json:"summary"`
+	// Source is the receipt file the expense was extracted from. Not part of the model's output.
+	Source string `json:"-"`
 }
 
 const systemPrompt = `You analyse receipts (photos and PDFs of physical and digital receipts) and extract the fields needed for a single line on an expense claim form. Always invoke the record_expense tool with your structured answer — do not respond with prose.
